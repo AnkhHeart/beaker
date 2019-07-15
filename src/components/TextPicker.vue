@@ -1,15 +1,22 @@
 <template>
   <div
     class="s-textpicker"
-    :class="[
-      { 's-textpicker--phase-one': phaseOne },
-      { 's-textpicker--phase-two': phaseTwo }
-    ]"
+    @input="watchInput($event)"
+    @focus="watchCursor($event)"
+    @click="watchCursor($event)"
+    @keyup="watchCursor($event)"
+    @keydown="keyEvent"
+    ref="picker"
   >
-    <transition-group name="s-textpicker--fadeY">
+    <transition
+      name="expand"
+      @enter="open"
+      @after-enter="afterOpen"
+      @leave="close"
+      tag="div"
+    >
       <div
         class="s-textpicker-results__cont"
-        :key="limitedResult.length"
         v-if="phaseTwo && limitedResult.length >= 1"
         :style="calcTransform"
         ref="resultArea"
@@ -24,30 +31,18 @@
             @mousedown="mergeValues"
             @mouseup="blurSearch"
           >
-            <div class="s-textpicker__result--title">{{ searchResult.item.variable }}</div>
-            <div class="s-textpicker__result--desc">{{ searchResult.item.description }}</div>
+            <div class="s-textpicker__result--title">
+              {{ searchResult.item.variable }}
+            </div>
+            <div class="s-textpicker__result--desc">
+              {{ searchResult.item.description }}
+            </div>
           </div>
         </transition-group>
       </div>
-    </transition-group>
-    <div class="s-textpicker--searchbar__cont">
-      <textarea
-        ref="textArea"
-        class="s-textpicker-textarea"
-        :name="name"
-        :cols="cols"
-        :rows="rows"
-        :placeholder="placeholder"
-        :maxlength="maxLength"
-        v-model="value"
-        @input="updateCursorPos"
-        @keydown="updateCursorPos"
-        @click="updateCursorPos"
-        @focus="updateCursorPos"
-        @blur.stop.prevent="playClosingSequence"
-        @keyup.stop.prevent="keyEvent"
-        @keydown.enter.prevent
-      />
+    </transition>
+    <div class="s-textpicker--searchbar__cont" ref="inputCont">
+      <slot name="input"></slot>
     </div>
   </div>
 </template>
@@ -59,22 +54,22 @@ import Fuse from "fuse.js";
 @Component({})
 export default class TextPicker extends Vue {
   $refs!: {
-    textArea: HTMLTextAreaElement;
     resultArea: HTMLDivElement;
+    inputCont: HTMLDivElement;
+    picker: HTMLDivElement;
   };
 
   result: any = [];
-  queryStart: any = [];
   private queryLength: number = 0;
   private phaseOne: Boolean = false;
   private phaseTwo: Boolean = false;
-  private resultLimit: Number = 7;
   private fuse: any = null;
-  private value: String = "";
-  private quickLinkLoc: any = [];
-  private keyEvents: any = [];
+  value: String = "";
   private currentResult: number = 0;
   private cursorPos: number = 0;
+
+  @Prop()
+  input_cursor!: number;
 
   @Prop()
   jsonSearch!: any;
@@ -89,27 +84,6 @@ export default class TextPicker extends Vue {
   @Prop({ default: "fuseInputChanged" })
   inputChangeEventName!: string;
 
-  @Prop()
-  name!: string;
-  @Prop()
-  label!: string;
-  @Prop()
-  placeholder!: string;
-  @Prop()
-  error!: string;
-  @Prop()
-  helpText!: string;
-  @Prop({ default: 100 })
-  cols!: number;
-  @Prop({ default: 3 })
-  rows!: number;
-  @Prop()
-  maxLength!: number;
-  @Prop()
-  autoResize!: boolean;
-  @Prop()
-  maxHeight!: number;
-
   get options() {
     let options = {
       caseSensitive: false,
@@ -119,9 +93,9 @@ export default class TextPicker extends Vue {
       matchAllTokens: false,
       findAllMatches: true,
       shouldSort: true,
-      threshold: 0.6,
+      threshold: 0.2,
       location: 1,
-      distance: 2,
+      distance: 10,
       maxPatternLength: 12,
       minMatchCharLength: 0,
       keys: ["variable"]
@@ -145,29 +119,54 @@ export default class TextPicker extends Vue {
     return this.limitedResult[this.currentResult].item.variable;
   }
 
-  get calcMaxHeight() {
-    if (this.phaseOne === false) {
-      return "max-height: 51px;";
-    }
+  get currentLength() {
+    return this.value.length;
   }
 
   get calcTransform() {
-    if (this.phaseOne === false) {
-      return "transform: translateY(0);";
-    }
-    if (
-      this.limitedResult.length >= 1 &&
-      this.limitedResult.length <= 7 &&
-      this.phaseOne == true
-    ) {
-      let y = parseInt(this.limitedResult.length) * 32;
-      return "transform: translateY(-" + y + "px);";
-    } else {
-      return "transform: translateY(-224px);";
-    }
+    let nudge = this.$refs.picker.offsetHeight;
+    return "transform: translateY(-" + nudge + "px);";
   }
 
-  @Watch("value")
+  afterOpen(element) {
+    element.style.height = "auto";
+  }
+
+  open(element) {
+    let width = getComputedStyle(element).width;
+    element.style.width = width;
+    element.style.position = `absolute`;
+    element.style.visibility = `hidden`;
+    element.style.height = `auto`;
+    let height = getComputedStyle(element).height;
+    element.style.width = null;
+    element.style.position = null;
+    element.style.visibility = null;
+    element.style.height = 0;
+    getComputedStyle(element).height;
+    setTimeout(() => {
+      element.style.height = height;
+    });
+  }
+
+  close(element) {
+    let height = getComputedStyle(element).height;
+    element.style.height = height;
+    getComputedStyle(element).height;
+    setTimeout(() => {
+      element.style.height = 0;
+    });
+  }
+
+  watchCursor(val) {
+    this.cursorPos = val.target.selectionStart;
+  }
+
+  watchInput(val) {
+    this.value = val.target.value;
+  }
+
+  @Watch("value", { immediate: true })
   watchValue() {
     this.$parent.$emit(this.inputChangeEventName, this.value);
     this.$emit(this.inputChangeEventName, this.value);
@@ -176,6 +175,7 @@ export default class TextPicker extends Vue {
       if (this.noResults) this.playClosingSequence();
       if (this.value.length <= 0) this.playClosingSequence();
     }
+    if (this.value === "") this.result = [];
   }
 
   @Watch("result")
@@ -188,26 +188,24 @@ export default class TextPicker extends Vue {
     this.noResults ? this.playClosingSequence() : this.playOpeningSequence();
   }
 
-  updateCursorPos(e: { target: HTMLInputElement }){
-    this.cursorPos = Number(e.target.selectionStart);
-    this.watchValue();
-  }
-
   getSearchString() {
     if (this.value.trim() === "") {
       this.result = [];
     } else {
-      const bracketOpen = this.value.substring(0, this.cursorPos).lastIndexOf("{");
-      const searchValue = this.value.substring(bracketOpen, this.cursorPos);
+      const cursorPos = this.cursorPos + 1;
+      const bracketOpen = this.value.lastIndexOf("{");
+      const searchValue = this.value.substring(bracketOpen, cursorPos);
       const bracketClose = searchValue.lastIndexOf("}");
-
+      console.log(searchValue);
       if (
-        this.cursorPos > bracketOpen &&
+        cursorPos > bracketOpen &&
         bracketClose === -1 &&
         bracketOpen !== -1
       ) {
         this.result = this.fuse.search(searchValue);
         this.queryLength = searchValue.length;
+      } else {
+        this.playClosingSequence();
       }
     }
   }
@@ -218,6 +216,9 @@ export default class TextPicker extends Vue {
       if (this.currentResult <= this.limitedResult.length - 7) {
         this.$refs.resultArea.scrollBy(0, -32);
       }
+      event.preventDefault();
+      event.stopPropagation();
+
       this.currentResult--;
     }
     // KEYPRESS DOWN
@@ -228,12 +229,17 @@ export default class TextPicker extends Vue {
       if (this.currentResult >= 6) {
         this.$refs.resultArea.scrollBy(0, 32);
       }
+      event.stopPropagation();
+
       this.currentResult++;
     }
     // KEYPRESS ENTER
     if (event.keyCode === 13 && this.phaseOne) {
-      event.preventDefault();
-      this.mergeValues();
+      if (this.result != []) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.mergeValues();
+      }
     }
     // KEYPRESS ESC
     if (event.keyCode === 27 && this.phaseOne) {
@@ -242,12 +248,15 @@ export default class TextPicker extends Vue {
   }
 
   mergeValues() {
-    const cursor = this.$refs.textArea.selectionStart;
+    const cursor = this.cursorPos;
     this.value =
       this.value.substring(0, cursor) +
       this.selectedResult.substring(this.queryLength) +
       this.value.substring(cursor);
-    this.result = [];
+    setTimeout(() => {
+      this.result = [];
+    });
+    this.$emit("update", this.value);
   }
 
   playClosingSequence() {
@@ -278,16 +287,11 @@ export default class TextPicker extends Vue {
   }
 
   blurSearch() {
-    this.$refs.textArea.blur();
     this.currentResult = 0;
   }
 
   mounted() {
     this.initFuse();
-  }
-
-  updated() {
-    console.log(this.currentResult);
   }
 }
 </script>
@@ -307,17 +311,6 @@ export default class TextPicker extends Vue {
 
   &.s-textpicker--phase-one {
     background-color: @day-bg;
-  }
-
-  ::placeholder {
-    color: #91979a;
-    opacity: 1;
-  }
-
-  .s-textpicker-textarea {
-    border: 1px solid @day-input-border;
-    border-radius: @radius;
-    margin: 0;
   }
 
   .s-textpicker__result--title {
@@ -343,6 +336,7 @@ export default class TextPicker extends Vue {
     display: flex;
     width: 100%;
     max-height: 224px;
+    bottom: 0;
     flex-direction: column-reverse;
     overflow-y: scroll;
     overflow-x: hidden;
@@ -382,7 +376,6 @@ export default class TextPicker extends Vue {
 
   .s-textpicker-results {
     display: flex;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     height: 32px;
     transform-origin: bottom;
     flex-direction: row;
@@ -418,46 +411,29 @@ export default class TextPicker extends Vue {
 
   .s-textpicker--fadeX-enter {
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    transform: translateX(10px);
     opacity: 0;
   }
 
   .s-textpicker--fadeX-leave-to {
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     opacity: 0;
-    transform: translateX(10px);
   }
 
   .s-textpicker--fadeX-move {
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform 0.125s cubic-bezier(0.4, 0, 0.2, 1);
   }
+}
 
-  .s-textpicker--fadeY-enter-active {
-    transition: all 0.25s 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    opacity: 1;
-  }
-
-  .s-textpicker--fadeY-leave-active {
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    position: absolute;
-    opacity: 0;
-  }
-
-  .s-textpicker--fadeY-enter {
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    transform: translateY(-10px);
-    opacity: 0;
-  }
-
-  .s-textpicker--fadeY-leave-to {
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-
-  .s-textpicker--fadeY-move {
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+.expand-enter,
+.expand-leave-to {
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 0;
+  opacity: 0;
 }
 
 .night {
